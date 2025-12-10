@@ -1,34 +1,79 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Req,
+  UseGuards,
+  SetMetadata,
+  Res,
+  HttpStatus,
+} from '@nestjs/common';
 import { WalletsService } from './wallets.service';
-import { CreateWalletDto } from './dto/create-wallet.dto';
-import { UpdateWalletDto } from './dto/update-wallet.dto';
+import { CompositeAuthGuard } from '../auth/composite.guard';
+import type { Response } from 'express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiSecurity,
+  ApiResponse,
+} from '@nestjs/swagger'; // Import Swagger
+import { DepositDto, TransferDto } from './dto/wallet.dto'; // Import DTOs
+import { TransactionResponseDto } from 'src/transactions/dto/transaction.dto';
 
-@Controller('wallets')
+@ApiTags('Wallet') // Swagger Group
+@ApiBearerAuth() // Swagger Auth Icon
+@ApiSecurity('x-api-key')
+@Controller('wallet')
 export class WalletsController {
-  constructor(private readonly walletsService: WalletsService) {}
+  constructor(private readonly walletService: WalletsService) {}
 
-  @Post()
-  create(@Body() createWalletDto: CreateWalletDto) {
-    return this.walletsService.create(createWalletDto);
+  @Post('deposit')
+  @UseGuards(CompositeAuthGuard)
+  @SetMetadata('permission', 'deposit')
+  @ApiOperation({ summary: 'Initiate a Paystack deposit' })
+  async deposit(@Req() req, @Body() body: DepositDto) {
+    // Use DTO Type
+    return this.walletService.initiateDeposit(req.user, body.amount);
   }
 
-  @Get()
-  findAll() {
-    return this.walletsService.findAll();
+  @Post('transfer')
+  @UseGuards(CompositeAuthGuard)
+  @SetMetadata('permission', 'transfer')
+  @ApiOperation({ summary: 'Transfer funds to another wallet' })
+  async transfer(@Req() req, @Body() body: TransferDto) {
+    // Use DTO Type
+    return this.walletService.transfer(
+      req.user,
+      body.wallet_number,
+      body.amount,
+    );
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.walletsService.findOne(+id);
+  @Get('balance')
+  @UseGuards(CompositeAuthGuard)
+  @SetMetadata('permission', 'read')
+  @ApiOperation({ summary: 'Get wallet balance' })
+  async balance(@Req() req) {
+    return this.walletService.getBalance(req.user);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateWalletDto: UpdateWalletDto) {
-    return this.walletsService.update(+id, updateWalletDto);
+  @Get('transactions')
+  @UseGuards(CompositeAuthGuard)
+  @SetMetadata('permission', 'read')
+  @ApiOperation({ summary: 'Get transaction history' })
+  @ApiResponse({ status: 200, type: [TransactionResponseDto] })
+  async history(@Req() req) {
+    return this.walletService.getHistory(req.user);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.walletsService.remove(+id);
+  @Post('paystack/webhook')
+  async webhook(@Req() req, @Res() res: Response) {
+    await this.walletService.processWebhook(
+      req.headers['x-paystack-signature'],
+      req.body,
+    );
+    return res.status(HttpStatus.OK).json({ status: true });
   }
 }
