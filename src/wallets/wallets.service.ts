@@ -85,7 +85,7 @@ export class WalletsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!senderWallet) throw new NotFoundException('Sender wallet not found');
-      if (Number(senderWallet.balance) <= amount)
+      if (Number(senderWallet.balance) < amount)
         throw new BadRequestException('Insufficient funds');
 
       const recipientWallet = await queryRunner.manager.findOne(Wallet, {
