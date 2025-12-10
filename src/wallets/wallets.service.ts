@@ -62,7 +62,7 @@ export class WalletsService {
       // We save the amount in NAIRA as requested
       const transaction = this.transRepo.create({
         wallet: wallet,
-        amount: amountKobo, // Saving Naira
+        amount: amount, // Saving Naira
         reference: data.reference,
         status: 'pending',
         type: 'deposit',
