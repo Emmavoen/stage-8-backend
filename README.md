@@ -5,8 +5,8 @@
 
 A robust Fintech-grade backend service built with **NestJS**. This application provides a complete digital wallet system allowing users to authenticate via Google, deposit funds using **Paystack**, transfer money to other users, and manage access via **API Keys**.
 
-**🚀 Live URL:** [https://stage-8-backend.onrender.com](https://stage-8-backend.onrender.com)  
-**📄 Swagger Documentation:** [https://stage-8-backend.onrender.com/api](https://stage-8-backend.onrender.com/api)
+**🚀 Live URL:** [https://stage-8-backend.onrender.com] 
+**📄 Swagger Documentation:** [https://stage-8-backend.onrender.com/api]
 
 ---
 
@@ -42,7 +42,7 @@ A robust Fintech-grade backend service built with **NestJS**. This application p
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/Emmavoen/stage-8-backend.git](https://github.com/Emmavoen/stage-8-backend.git)
+git clone [https://github.com/Emmavoen/stage-8-backend.git]
 cd stage-8-backend
 ````
 
