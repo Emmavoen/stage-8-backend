@@ -10,11 +10,15 @@ export class CreateApiKeyDto {
   @ApiProperty({ example: ['read', 'transfer'], isArray: true })
   @IsArray()
   @IsString({ each: true })
+  @IsIn(['deposit', 'transfer', 'read'], {
+    each: true,
+    message: 'Permissions must be one of: deposit, transfer, read',
+  })
   permissions: string[];
 
   @ApiProperty({ example: '1M', description: '1H, 1D, 1M, or 1Y' })
   @IsString()
-  @IsIn(['1H', '1D', '1M', '1Y']) // Strict validation
+  @IsIn(['1H', '1D', '1M', '1Y'])
   expiry: string;
 }
 

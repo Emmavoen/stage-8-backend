@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -14,6 +15,7 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class WalletsService {
+  private readonly logger = new Logger(WalletsService.name);
   constructor(
     @InjectRepository(Wallet) private walletRepo: Repository<Wallet>,
     @InjectRepository(Transaction) private transRepo: Repository<Transaction>,
@@ -31,11 +33,16 @@ export class WalletsService {
   }
 
   async initiateDeposit(user: User, amount: number) {
+    const amountKobo = Math.ceil(amount * 100);
     try {
       const response = await lastValueFrom(
         this.httpService.post(
           'https://api.paystack.co/transaction/initialize',
-          { email: user.email, amount: amount.toString() },
+          {
+            email: user.email,
+            amount: amountKobo.toString(),
+            metadata: { userId: user.id },
+          },
           {
             headers: {
               Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -43,7 +50,26 @@ export class WalletsService {
           },
         ),
       );
-      return response.data.data;
+      const data = response.data.data;
+
+      // 3. Ensure Wallet Exists
+      let wallet = await this.walletRepo.findOne({
+        where: { user: { id: user.id } },
+      });
+      if (!wallet) wallet = await this.createWallet(user);
+
+      // 4. CREATE PENDING TRANSACTION (The Fix)
+      // We save the amount in NAIRA as requested
+      const transaction = this.transRepo.create({
+        wallet: wallet,
+        amount: amountKobo, // Saving Naira
+        reference: data.reference,
+        status: 'pending',
+        type: 'deposit',
+      });
+      await this.transRepo.save(transaction);
+
+      return data;
     } catch (e) {
       throw new BadRequestException('Paystack Error');
     }
@@ -117,24 +143,62 @@ export class WalletsService {
     if (hash !== signature) throw new BadRequestException('Invalid Signature');
 
     if (event.event === 'charge.success') {
-      const email = event.data.customer.email;
-      const amount = event.data.amount; // In Kobo
-      const userWallet = await this.walletRepo.findOne({
-        where: { user: { email } },
-        relations: ['user'],
+      const reference = event.data.reference;
+
+      // 2. IDEMPOTENCY CHECK: Find the transaction first
+      const transaction = await this.transRepo.findOne({
+        where: { reference },
+        relations: ['wallet'],
       });
 
-      if (userWallet) {
-        userWallet.balance = Number(userWallet.balance) + amount; // Store as Kobo or divide by 100
-        await this.walletRepo.save(userWallet);
-        const tx = this.transRepo.create({
-          wallet: userWallet,
-          amount,
-          type: 'deposit',
-          status: 'success',
-          reference: event.data.reference,
+      if (!transaction) {
+        // This is weird. We initiated it but didn't save it?
+        // Or it's a manual transfer not initiated via our API.
+        this.logger.warn(
+          `Webhook received for unknown reference: ${reference}`,
+        );
+        return;
+      }
+
+      // 3. STOP if already successful (Double Credit Prevention)
+      if (transaction.status === 'success') {
+        this.logger.log(
+          `Transaction ${reference} already processed. Skipping.`,
+        );
+        return;
+      }
+
+      // 4. Update Balance & Status Atomically
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      try {
+        // Lock the wallet for update
+        const wallet = await queryRunner.manager.findOne(Wallet, {
+          where: { id: transaction.wallet.id },
+          lock: { mode: 'pessimistic_write' },
         });
-        await this.transRepo.save(tx);
+
+        if (wallet) {
+          // Update Wallet Balance (Amount is already in Naira in the Transaction table)
+          wallet.balance = Number(wallet.balance) + Number(transaction.amount);
+        }
+        // Update Transaction Status
+        transaction.status = 'success';
+        // Optional: Update paidAt if you have that column
+        // transaction.paidAt = new Date();
+
+        await queryRunner.manager.save(wallet);
+        await queryRunner.manager.save(transaction); // Save the updated status
+
+        await queryRunner.commitTransaction();
+        this.logger.log(`Deposit successful: ${reference}`);
+      } catch (err) {
+        await queryRunner.rollbackTransaction();
+        this.logger.error(`Failed to credit wallet: ${err.message}`);
+      } finally {
+        await queryRunner.release();
       }
     }
   }
