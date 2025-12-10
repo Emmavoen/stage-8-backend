@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -40,6 +41,16 @@ export class ApiKeysService {
     });
     if (count >= 5) throw new ForbiddenException('Max 5 active keys allowed');
 
+    // 2. NEW: Check for Duplicates (Same Name)
+    const existingKey = await this.apiKeyRepo.findOne({
+      where: { user: { id: user.id }, name: name, is_active: true },
+    });
+    if (existingKey) {
+      throw new BadRequestException(
+        `An active key with the name "${name}" already exists. Please use a different name.`,
+      );
+    }
+
     const key = `sk_live_${crypto.randomBytes(16).toString('hex')}`;
     const newKey = this.apiKeyRepo.create({
       key,
@@ -63,11 +74,38 @@ export class ApiKeysService {
       where: { id: expiredKeyId, user: { id: user.id } },
     });
     if (!oldKey) throw new BadRequestException('Key not found');
+
+    // Revoke the old key just in case it wasn't already
+    oldKey.is_active = false;
+    await this.apiKeyRepo.save(oldKey);
+
     return this.create(
       user,
       `${oldKey.name}_rollover`,
       oldKey.permissions,
       expiry,
     );
+  }
+
+  // 4. NEW: Revoke Method
+  async revokeByKey(user: User, keyString: string) {
+    // Find the key matching the string AND the user
+    const apiKey = await this.apiKeyRepo.findOne({
+      where: { key: keyString, user: { id: user.id } },
+    });
+
+    if (!apiKey) {
+      throw new NotFoundException(
+        'API Key not found or does not belong to you',
+      );
+    }
+
+    if (!apiKey.is_active) {
+      throw new BadRequestException('This key is already revoked');
+    }
+
+    // Revoke it
+    apiKey.is_active = false;
+    return await this.apiKeyRepo.save(apiKey);
   }
 }

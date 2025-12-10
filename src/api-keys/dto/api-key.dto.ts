@@ -33,3 +33,13 @@ export class RolloverApiKeyDto {
   @IsIn(['1H', '1D', '1M', '1Y'])
   expiry: string;
 }
+
+export class RevokeApiKeyDto {
+  @ApiProperty({
+    example: 'sk_live_12345abcdef',
+    description: 'The API Key to revoke',
+  })
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+}

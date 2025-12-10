@@ -1,8 +1,20 @@
-import { Controller, Post, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  UseGuards,
+  Patch,
+  Param,
+} from '@nestjs/common';
 import { ApiKeysService } from './api-keys.service';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { CreateApiKeyDto, RolloverApiKeyDto } from './dto/api-key.dto';
+import {
+  CreateApiKeyDto,
+  RevokeApiKeyDto,
+  RolloverApiKeyDto,
+} from './dto/api-key.dto';
 
 @ApiTags('API Keys')
 @ApiBearerAuth()
@@ -31,5 +43,12 @@ export class ApiKeysController {
       body.expired_key_id,
       body.expiry,
     );
+  }
+
+  @Post('revoke') // Changed to POST (or PATCH) using Body
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Revoke an active API Key' })
+  revoke(@Req() req, @Body() body: RevokeApiKeyDto) {
+    return this.apiKeysService.revokeByKey(req.user, body.key);
   }
 }
